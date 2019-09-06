@@ -1,0 +1,62 @@
+// File   lmdb_test.cpp
+// Author lidongming1@360.cn
+// Date   2019-08-31 12:08:24
+// Brief
+
+#include <gtest/gtest.h>
+#include <iostream>
+#include "lmdb_wrapper.h"
+
+const int kSize = 100;
+
+class LMDBTest : public ::testing::Test {
+ public:
+  void SetUp() {}
+  void TearDown() {}
+};
+
+TEST_F(LMDBTest, TestLmdb) {
+  LMDBWrapper db;
+  db.Init("test_lmdb", 1024 * 1024);
+  db.Open();
+
+  std::string key;
+  std::string value;
+
+  db.Begin();
+  for (int i = 0; i < kSize; i++) {
+    key = "key_" + std::to_string(i);
+    value = std::to_string(i);
+    db.Put(key.c_str(), value.c_str());
+  }
+  db.Commit();
+
+  std::string expected_value;
+  for (int i = 0; i < 10; i++) {
+    db.Begin();
+    key = "key_" + std::to_string(i);
+    expected_value = std::to_string(i);
+    db.Get(key.c_str(), &value);
+    db.Commit();
+    EXPECT_TRUE(value == expected_value);
+    std::cout << value << std::endl;
+  }
+
+  db.Begin();
+  db.OpenCursor();
+  for (int i = 0; i < kSize; i++) {
+    key = "key_cursor_" + std::to_string(i);
+    value = std::to_string(10000 + i);
+    db.Put(key.c_str(), value.c_str());
+  }
+  db.CloseCursor();
+  db.Commit();
+
+  db.Begin();
+  db.OpenCursor();
+  while (db.Get(key.c_str(), &value)) {
+    std::cout << value << std::endl;
+  }
+  db.CloseCursor();
+  db.TransitionAbort();
+}

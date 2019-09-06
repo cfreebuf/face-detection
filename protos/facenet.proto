@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package facenet_server;
+
+service FaceNet {
+  rpc GenerateEmbedding(EmbeddingRequest) returns (EmbeddingReply) {}
+}
+
+message EmbeddingRequest {
+  string image_base64 = 1;
+}
+
+message EmbeddingReply {
+  int32 error = 1;
+  repeated double dim = 2; 
+}

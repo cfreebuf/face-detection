@@ -1,0 +1,71 @@
+// File   lmdb_test.cpp
+// Author lidongming1@360.cn
+// Date   2019-08-31 12:08:24
+// Brief
+
+#include <gtest/gtest.h>
+#include <iostream>
+#include "third_party/rapidjson/rapidjson.h"
+#include "third_party/rapidjson/document.h"
+#include "face_db.h"
+
+const int kSize = 100;
+FaceDB face_db_;
+
+class LMDBTest : public ::testing::Test {
+ public:
+  void SetUp() {}
+  void TearDown() {}
+};
+
+TEST_F(LMDBTest, TestPut) {
+  // lmdb::txn write_txn = face_db_.WriteTransaction();
+  // lmdb::dbi lmdb_dbi = face_db_.DBI(write_txn);
+
+  for (int i = 0; i < kSize; i++) {
+    std::string key = "key_" + std::to_string(i);
+    std::cout << "start put key:" << key << " value:" << std::to_string(i) << std::endl;
+    // face_db_.Put(write_txn, lmdb_dbi, key, std::to_string(i));
+    face_db_.Put(key, std::to_string(i));
+    std::cout << "put key:" << key << " value:" << std::to_string(i) << std::endl;
+  }
+
+  face_db_.Commit();
+}
+
+TEST_F(LMDBTest, TestGet) {
+  // lmdb::cursor cursor = face_db_.Cursor(read_txn, lmdb_dbi);
+  std::string key;
+  std::string value;
+
+  for (int i = 0; i < 10; i++) {
+    std::string v = std::to_string(i);
+    key = "key_" + std::to_string(i);
+    face_db_.Get(key, value);
+    // face_db_.Get(cursor, key, value);
+    // face_db_.Get(lmdb_dbi, read_txn, key, value);
+    face_db_.Get(key, value);
+    std::cout << value << std::endl;
+    EXPECT_TRUE(value == v);
+  }
+  // face_db_.CloseCursor(cursor);
+  // face_db_.AbortTransaction(read_txn);
+}
+
+// TEST_F(LMDBTest, TestForeach) {
+//   lmdb::txn read_txn = face_db_.ReadOnlyTransaction();
+//   lmdb::dbi lmdb_dbi = face_db_.DBI(read_txn);
+//   lmdb::cursor cursor = face_db_.Cursor(read_txn, lmdb_dbi);
+//   std::string key;
+//   std::string value;
+// 
+//   int i = 0;
+//   while (face_db_.GetNext(cursor, key, value)) {
+//     std::cout << value << std::endl;
+//     EXPECT_TRUE(value == std::to_string(i));
+//     i++;
+//   }
+// 
+//   face_db_.CloseCursor(cursor);
+//   face_db_.AbortTransaction(read_txn);
+// }

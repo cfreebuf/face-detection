@@ -1,0 +1,34 @@
+{
+  "face_infos": [
+    {
+      "face_id": 1,
+      "name": "lidongming",
+      "gender": 1,
+      "age": 30
+    },
+    {
+      "face_id": 2,
+      "name": "zhongjiannan",
+      "gender": 1,
+      "age": 30
+    },
+    {
+      "face_id": 3,
+      "name": "yanglin",
+      "gender": 1,
+      "age": 18
+    },
+    {
+      "face_id": 4,
+      "name": "quancun",
+      "gender": 1,
+      "age": 18
+    },
+    {
+      "face_id": 5,
+      "name": "zhixin",
+      "gender": 1,
+      "age": 18
+    }
+  ]
+}

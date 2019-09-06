@@ -1,0 +1,96 @@
+#include "lmdb_wrapper.h"
+
+int main() {
+  auto env = lmdb_wrapper::LMDBEnv("./data/face_lmdb");
+  auto face_db = lmdb_wrapper::LMDBDatabase<uint64_t, double>("faces");
+
+#if 0
+  {
+    // Write path
+    auto wtxn = env.OpenWriteTxn();
+    auto dim = std::vector<double>{ 0.1, 0.11 };
+    face_db.put(wtxn, 123, &dim[0], dim.size());
+    auto dim0 = std::vector<double>{ 0.6, 0.66 };
+    face_db.put(wtxn, 456, &dim0[0], dim0.size());
+    auto dim1 = std::vector<double>{ 0.9, 0.99 };
+    face_db.put(wtxn, 789, &dim1[0], dim1.size());
+    wtxn.commit();
+  }
+
+  {
+    auto txn = env.OpenWriteTxn();
+    face_db.del(txn, 123);
+    txn.commit();
+  }
+#endif
+
+#if 0
+  bool ret = true;
+  uint64_t key;
+  lmdb_wrapper::LMDBValue<double> value;
+
+  {
+    // Read path
+    auto rtxn = env.OpenReadTxn();
+    key = 123;
+    ret = face_db.get(rtxn, key, &value);
+    if (ret) {
+      printf("key:%lld size:%d\n", key, value.size());
+      for (int i = 0; i < value.size(); i++) {
+        printf("%f\n", value[i]);
+      }
+    } else {
+      printf("not found key:%lld\n", key);
+    }
+
+    key = 456;
+    ret = face_db.get(rtxn, key, &value);
+    if (ret) {
+      printf("key:%lld size:%d\n", key, value.size());
+      for (int i = 0; i < value.size(); i++) {
+        printf("%f\n", value[i]);
+      }
+    } else {
+      printf("not found key:%lld\n", key);
+    }
+  }
+
+  {
+    // Write path
+    key = 456;
+    auto wtxn = env.OpenWriteTxn();
+    auto dim = std::vector<double>{ 0.7, 0.77 };
+    face_db.put(wtxn, key, &dim[0], dim.size());
+    wtxn.commit();
+
+    // Read path
+    auto rtxn = env.OpenReadTxn();
+    ret = face_db.get(rtxn, key, &value);
+    if (ret) {
+      printf("key:%lld size:%d\n", key, value.size());
+      for (int i = 0; i < value.size(); i++) {
+        printf("%f\n", value[i]);
+      }
+    } else {
+      printf("not found key:%lld\n", key);
+    }
+  }
+
+#endif
+  {
+    auto rtxn = env.OpenReadTxn();
+    auto cursor = face_db.cursor(rtxn);
+    printf("start foreach\n");
+    lmdb_wrapper::LMDBValue<uint64_t> key;
+    lmdb_wrapper::LMDBValue<double> value;
+    while (face_db.get_next(cursor, &key, &value)) {
+      uint64_t k = (uint64_t)(*(uint64_t*)&key[0]);
+      printf("key:%lld size:%d\n", k, value.size());
+      for (int i = 0; i < value.size(); i++) {
+        printf("%f\n", value[i]);
+      }
+    }
+  }
+
+  return 0;
+}
