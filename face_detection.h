@@ -10,9 +10,7 @@
 #include <memory>
 
 #include "third_party/rapidjson/stringbuffer.h"
-#include "tensorflow/c/c_api.h"
-#include "tensorflow_mtcnn.h"
-#include "mtcnn.h"
+#include "tf_mtcnn.h"
 #include "capture.h"
 #include "util/util.h"
 #include "util/base64.h"
@@ -35,7 +33,6 @@ class FaceDetection {
 
   bool Start();
   void Stop();
-  void Clean();
 
   void InitZmq();
   bool ConnectFaceNet();
@@ -51,10 +48,10 @@ class FaceDetection {
 
   void WrapJson(const std::string& raw, std::string* data);
 
-  void DrawRectAndLandmark(cv::Mat& frame, face_box& box);
-  void DrawFaceInfo(cv::Mat& frame, FaceInfo& face_info, face_box& box, int i);
+  void DrawRectAndLandmark(cv::Mat& frame, FaceBox& box);
+  void DrawFaceInfo(cv::Mat& frame, FaceInfo& face_info, FaceBox& box, int i);
 
-  cv::Mat NormalizedFaceRange(cv::Mat& frame, face_box& box);
+  cv::Mat NormalizedFaceRange(cv::Mat& frame, FaceBox& box);
 
   bool GetFaceDims(cv::Mat& face_img, std::vector<double>* dim);
 
@@ -69,8 +66,7 @@ class FaceDetection {
  private:
   DetectType type_;
   std::shared_ptr<Capture> capture_;
-	TF_Session* sess_;
-	TF_Graph* graph_;
+  TFMtcnn tf_mtcnn_;
   FaceIndex face_index_;
 
   std::unique_ptr<FaceNetClient> facenet_client_;

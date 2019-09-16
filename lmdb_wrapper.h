@@ -3,6 +3,9 @@
 // Date   2019-09-01 13:11:34
 // Brief
 
+#ifndef _LMDB_WRAPPER_H_
+#define _LMDB_WRAPPER_H_
+
 #include <string>
 #include <cassert>
 #include <vector>
@@ -11,9 +14,6 @@
 #include <vector>
 #include <iostream>
 #include "third_party/lmdbxx/lmdb++.h"
-
-#ifndef _LMDB_WRAPPER_H_
-#define _LMDB_WRAPPER_H_
 
 namespace lmdb_wrapper {
 

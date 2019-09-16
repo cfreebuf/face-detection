@@ -22,9 +22,8 @@
 #include "util/string_utils.h"
 
 FaceDetection::FaceDetection(int type) : type_(DetectType(type)) {
-  LOG(INFO) << "Start init mtcnn";
-  sess_ = load_graph(FLAGS_mtcnn_model_file.c_str(), &graph_);
-  if (sess_ == NULL) {
+  LOG(INFO) << "Start init tf mtcnn";
+  if (tf_mtcnn_.Init(FLAGS_mtcnn_model_file) != 0) {
     LOG(WARNING) << "Failed to load graph for mtcnn, model:"
                  << FLAGS_mtcnn_model_file;
     exit(-1);
@@ -35,11 +34,7 @@ FaceDetection::FaceDetection(int type) : type_(DetectType(type)) {
       FLAGS_facenet_server, grpc::InsecureChannelCredentials()));
 }
 
-FaceDetection::~FaceDetection() {
-  if (sess_ != NULL || graph_ != NULL) {
-    Clean();
-  }
-}
+FaceDetection::~FaceDetection() {}
 
 int FaceDetection::Init() {
   LOG(INFO) << "Start init face_detection";
@@ -63,7 +58,7 @@ int FaceDetection::InitCapture() {
   return 0;
 }
 
-void FaceDetection::DrawRectAndLandmark(cv::Mat& frame, face_box& box) {
+void FaceDetection::DrawRectAndLandmark(cv::Mat& frame, FaceBox& box) {
   cv::rectangle(frame, cv::Point(box.x0, box.y0), cv::Point(box.x1, box.y1),
                 cv::Scalar(0, 255, 0), 1);
 
@@ -74,7 +69,7 @@ void FaceDetection::DrawRectAndLandmark(cv::Mat& frame, face_box& box) {
 }
 
 void FaceDetection::DrawFaceInfo(cv::Mat& frame, FaceInfo& face_info,
-                                 face_box& box, int i) {
+                                 FaceBox& box, int i) {
   const int font_height = 30;
   const int box_width = 150;
   const int box_height = 4 * font_height + 10;
@@ -130,7 +125,7 @@ bool FaceDetection::DetectLoop() {
 
   face_index_.BuildIndexFromFaceDB();
 
-  std::vector<face_box> faces;
+  std::vector<FaceBox> faces;
   std::vector<double> dims;
   std::vector<uint64_t> face_ids;
   std::vector<double> face_dist;
@@ -150,11 +145,11 @@ bool FaceDetection::DetectLoop() {
     cv::Mat frame;
 		capture->read(frame);
     cv::Mat frame_tmp = frame;
-		mtcnn_detect(sess_, graph_, frame, faces);
+    tf_mtcnn_.Detect(frame, &faces);
     LOG(INFO) << "faces size:" << faces.size();
 
 		for (unsigned int i = 0; i < faces.size(); i++) {
-			face_box& box = faces[i];
+			FaceBox& box = faces[i];
       cv::Mat face_img = NormalizedFaceRange(frame, box);
       DrawRectAndLandmark(frame, box);
 
@@ -229,20 +224,6 @@ bool FaceDetection::DetectLoop() {
 
 void FaceDetection::Stop() {}
 
-void FaceDetection::Clean() {
-	TF_Status* s = TF_NewStatus(); 
-  if (sess_ != NULL) {
-    TF_CloseSession(sess_, s);
-    TF_DeleteSession(sess_, s);
-    sess_ = NULL;
-  }
-  if (graph_ != NULL) {
-    TF_DeleteGraph(graph_);
-    TF_DeleteStatus(s);
-    graph_ = NULL;
-  }
-}
-
 bool FaceDetection::DetectImage(const std::string& image_file) {
   const cv::Size kNormalSize = cv::Size(160, 160);
 	cv::Mat frame = cv::imread(image_file);
@@ -251,11 +232,11 @@ bool FaceDetection::DetectImage(const std::string& image_file) {
 		return false;
 	}
 
-	std::vector<face_box> face_info;
-	mtcnn_detect(sess_, graph_, frame, face_info);
+	std::vector<FaceBox> face_info;
+	tf_mtcnn_.Detect(frame, &face_info);
 
 	for (unsigned int i = 0; i < face_info.size(); i++) {
-		face_box& box = face_info[i];
+		FaceBox& box = face_info[i];
     cv::Mat face_img = frame(cv::Range(box.y0, box.y1), cv::Range(box.x0, box.x1));
     cv::imshow("face_" + std::to_string(i), face_img);
 
@@ -323,14 +304,14 @@ bool FaceDetection::TakePhoto() {
     return false;
   }
 
-  std::vector<face_box> faces;
+  std::vector<FaceBox> faces;
   std::vector<double> dims;
 
   while (1) {
     cv::Mat frame;
     capture->read(frame);
     cv::Mat frame_tmp = frame;
-    mtcnn_detect(sess_, graph_, frame, faces);
+    tf_mtcnn_.Detect(frame, &faces);
     if (faces.empty()) {
       LOG(WARNING) << "No faced detected";
       continue;
@@ -340,7 +321,7 @@ bool FaceDetection::TakePhoto() {
       // continue;
     }
 
-    face_box& box = faces[0];
+    FaceBox& box = faces[0];
     cv::Mat face_img = NormalizedFaceRange(frame, box);
     DrawRectAndLandmark(frame, box);
 
@@ -373,7 +354,7 @@ bool FaceDetection::TakePhoto() {
   return true;
 }
 
-cv::Mat FaceDetection::NormalizedFaceRange(cv::Mat& frame, face_box& box) {
+cv::Mat FaceDetection::NormalizedFaceRange(cv::Mat& frame, FaceBox& box) {
   if (box.x0 < 0) { box.x0 = 0; }
   if (box.x1 < 0) { box.x1 = 0; }
   if (box.y0 < 0) { box.y0 = 0; }
