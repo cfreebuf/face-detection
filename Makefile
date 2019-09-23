@@ -6,20 +6,19 @@
 
 ifeq ($(shell uname -m),x86_64)
 
-# CC=/usr/local/bin/gcc
-# CXX=/usr/local/bin/g++
-
 # Modules
 MODULE=faced
 
 TF_ROOT=./tf
 
-# INC_DIR += -I$(PYTHON_INC_DIR)
-
 INC_DIR += -I/usr/local/include -I/usr/local/include/boost \
 					 -I/usr/local/include/opencv4 \
 					 -I/usr/local/include/gflags -I/usr/local/include/glog \
 					 -I$(TF_ROOT)/include \
+					 -I$(TF_ROOT)/include/contrib \
+					 -I$(TF_ROOT)/include/contrib/absl \
+					 -I$(TF_ROOT)/include/contrib/eigen \
+					 -I$(TF_ROOT)/include/third_party \
 					 -Icommonlib -I. 
 
 LIBS += -L/usr/local/lib -llmdb \
@@ -27,14 +26,9 @@ LIBS += -L/usr/local/lib -llmdb \
 				-lopencv_core -lopencv_imgproc -lopencv_highgui -lopencv_ml \
 				-lopencv_videoio -lopencv_imgcodecs \
 				-lgflags -lglog -lgtest -lgrpc++ -lprotobuf \
-				-Wl,-rpath,$(TF_ROOT)/lib -L$(TF_ROOT)/lib -ltensorflow
+				-Wl,-rpath,$(TF_ROOT)/lib -L$(TF_ROOT)/lib -ltensorflow_cc -ltensorflow_framework
 
-# STATIC_LIBS=Users/lidongming/tensorflow-1.14.0/tensorflow/contrib/makefile/gen/lib/libtensorflow-core.a \
-#						/Users/lidongming/tensorflow-1.14.0/tensorflow/contrib/makefile/gen/protobuf/lib/libprotobuf.a \
-#						/Users/lidongming/tensorflow-1.14.0/tensorflow/contrib/makefile/downloads/nsync/builds/default.macos.c++11/libnsync.a
-
-CXXFLAGS += -Wall -std=c++14 -O3 -Wno-deprecated-declarations -Wno-format
-# -framework CoreFoundation
+CXXFLAGS += -Wall -std=c++11 -O3 -Wno-deprecated-declarations -Wno-format -Wno-macro-redefined
 
 all: PRE_BUILD bin/$(MODULE) bin/unittest test/test_annoy
 	@echo "[[32mBUILD[0m][Target:'[32mall[0m']"

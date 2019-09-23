@@ -19,13 +19,16 @@
 #include "util/util.h"
 #include "util/rw_lock.h"
 #include "util/string_utils.h"
+#include "common/common.h"
 #include "common/common_gflags.h"
+
+const int FaceIndex::kDims = 512;
 
 FaceIndex::FaceIndex() : buf_index_(1) {
   for (int i = 0; i < 2; i++) {
     face_infos_buf_.push_back(std::make_shared<FaceInfoMap>());
   }
-  face_annoy_index_ = std::make_unique<FaceAnnoyIndex>(FaceIndex::kDims);
+  face_annoy_index_ = make_unique<FaceAnnoyIndex>(FaceIndex::kDims);
   std::thread(&FaceIndex::LoadFaceInfos, this).detach();
 }
 
@@ -57,12 +60,20 @@ void FaceIndex::BuildIndexFromFaceDB() {
   LOG(INFO) << "Finish build index size:" << Size();
 }
 
-void FaceIndex::GetNearst(int n, const std::vector<double>& query_dims,
+bool FaceIndex::GetNearest(int n, const std::vector<double>& query_dims,
                           std::vector<uint64_t>* index,
                           std::vector<double>* dist) {
   if (Size() > 0) {
+    if (index->size() < n) {
+      index->resize(n, -1);
+    }
+    if (dist->size() < n) {
+      dist->resize(n, std::numeric_limits<double>::max());
+    }
     face_annoy_index_->get_nns_by_vector(query_dims.data(), n, -1, index, dist);
+    return true;
   }
+  return false;
 }
 
 bool FaceIndex::GetFaceInfo(uint64_t face_id, FaceInfo* face_info) {

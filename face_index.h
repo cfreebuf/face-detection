@@ -20,40 +20,50 @@ struct FaceInfo {
   int gender;  // 0:make 1:female
   uint64_t face_id;
   std::string name;
+  float dist;
+  bool valid;
 };
 
 using FaceInfoMap = std::unordered_map<uint64_t, FaceInfo>;
 class FaceIndex {
  public:
-   const static int kDims = 512;
-   FaceIndex();
-   // ~FaceIndex();
-   void BuildIndexFromFaceDB();
+  static const int kDims;
 
-   void GetNearst(int n, const std::vector<double>& query_dims,
+ public:
+  FaceIndex();
+  // ~FaceIndex();
+  void BuildIndexFromFaceDB();
+
+  bool GetNearest(int n, const std::vector<double>& query_dims,
                   std::vector<uint64_t>* index, std::vector<double>* dist);
 
-   bool GetFaceInfo(uint64_t face_id, FaceInfo* face_info);
+  bool GetFaceInfo(uint64_t face_id, FaceInfo* face_info);
 
-   bool LoadFaceInfos();
-   std::shared_ptr<FaceInfoMap> LoadFaceInfosFromJsonFile();
+  bool LoadFaceInfos();
+  std::shared_ptr<FaceInfoMap> LoadFaceInfosFromJsonFile();
 
-   std::string FaceInfoString(FaceInfo& face_info) {
-     std::string info = "age:" + std::to_string(face_info.age) + " name:" + face_info.name;
-     return info;
-   }
+  std::string FaceInfoString(FaceInfo& face_info) {
+    std::string info;
+    if (face_info.valid) {
+      info = "age:" + std::to_string(face_info.age) + " name:" + face_info.name;
+      + " dist:" + std::to_string(face_info.dist);
+    } else {
+      info = " NO RECORD dist:" + std::to_string(face_info.dist);
+    }
+    return info;
+  }
 
-   int Size() {
-     if (face_annoy_index_) {
-       return face_annoy_index_->get_n_items();
-     }
-     return 0;
-   }
+  int Size() {
+    if (face_annoy_index_) {
+      return face_annoy_index_->get_n_items();
+    }
+    return 0;
+  }
 
  private:
-   std::unique_ptr<FaceAnnoyIndex> face_annoy_index_;
-   std::vector<std::shared_ptr<FaceInfoMap>> face_infos_buf_;
-   int buf_index_;
+  std::unique_ptr<FaceAnnoyIndex> face_annoy_index_;
+  std::vector<std::shared_ptr<FaceInfoMap>> face_infos_buf_;
+  int buf_index_;
 };
 
 #endif

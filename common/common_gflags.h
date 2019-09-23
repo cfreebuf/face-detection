@@ -24,8 +24,9 @@ DECLARE_int32(zmq_send_timeout);
 DECLARE_int32(camera_id);
 
 DECLARE_string(mtcnn_model_file);
+DECLARE_string(facenet_model_file);
 
-DECLARE_string(test_image);
+DECLARE_string(test_images_path);
 
 DECLARE_string(face_lmdb_path);
 DECLARE_int32(face_lmdb_size);

@@ -18,7 +18,8 @@ DEFINE_double(min_face_dist, 1.1, "min face distance");
 DEFINE_int32(camera_id, 0, "camera id");
 
 DEFINE_string(mtcnn_model_file, "./models/mtcnn_frozen_model.pb", "mtcnn model");
-DEFINE_string(test_image, "test.jpb", "test image");
+DEFINE_string(facenet_model_file, "./models/facenet/embedding.pb", "facenet model");
+DEFINE_string(test_images_path, "./data/test_images", "test images");
 
 DEFINE_string(face_lmdb_path, "./data/face_lmdb", "lmdb file for faces");
 DEFINE_int32(face_lmdb_size, 1024 * 1024 * 1024, "face lmdb file size");

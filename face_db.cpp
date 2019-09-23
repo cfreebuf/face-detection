@@ -6,13 +6,14 @@
 #include <glog/logging.h>
 #include <iostream>
 #include "face_db.h"
+#include "common/common.h"
 #include "common/common_gflags.h"
 
 int FaceDB::Init() {
   LOG(INFO) << "Start init face db size:" << FLAGS_face_lmdb_size;
 
-  lmdb_env_ = std::make_unique<lmdb_wrapper::LMDBEnv>(FLAGS_face_lmdb_path.c_str());
-  lmdb_db_ = std::make_unique<lmdb_wrapper::LMDBDatabase<uint64_t, double>>("faces");
+  lmdb_env_ = make_unique<lmdb_wrapper::LMDBEnv>(FLAGS_face_lmdb_path.c_str());
+  lmdb_db_ = make_unique<lmdb_wrapper::LMDBDatabase<uint64_t, double>>("faces");
   LOG(INFO) << "Finish init face db";
   return 0;
 }

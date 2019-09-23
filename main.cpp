@@ -6,29 +6,27 @@
 #include <thread>
 #include <glog/logging.h>
 #include "face_detection.h"
-#include "facenet_adapter.h"
 #include "common/common_gflags.h"
 
 using namespace google;
 
-// Reload gflags
-std::unique_ptr<gflags::FlagSaver> current_flags(new gflags::FlagSaver());
-void StartConfigReloadThread() {
-    std::thread([]() {
-        while (1) {
-            current_flags.reset();
-            current_flags.reset(new gflags::FlagSaver());
-            gflags::ReparseCommandLineNonHelpFlags();
-            std::this_thread::sleep_for(std::chrono::seconds(10));
-        }
-    }).detach();
-}
-
 int main(int argc, char** argv) {
+  bool stop = false;
+
   // Init gflags
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
   gflags::SetCommandLineOption("flagfile", "./conf/gflags.conf");
-  StartConfigReloadThread();
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
+
+  // Reload gflags
+  std::unique_ptr<gflags::FlagSaver> current_flags(new gflags::FlagSaver());
+  std::thread t([&current_flags, &stop]() {
+      while (!stop) {
+          current_flags.reset();
+          current_flags.reset(new gflags::FlagSaver());
+          gflags::ReparseCommandLineNonHelpFlags();
+          std::this_thread::sleep_for(std::chrono::seconds(10));
+      }
+  });
 
   // Init glog
   google::InitGoogleLogging(argv[0]);
@@ -49,6 +47,9 @@ int main(int argc, char** argv) {
   }
 
   faced.Start();
+
+  stop = true;
+  t.join();
 
   return 0;
 }

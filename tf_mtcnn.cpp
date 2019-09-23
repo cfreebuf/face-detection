@@ -1,305 +1,254 @@
+// File   tf_mtcnn.cpp
+// Author lidongming1@360.cn
+// Date   2019-09-20 14:35:49
+// Brief
+
 #include <fstream>
 #include <utility>
+#include <glog/logging.h>
 #include "tf_mtcnn.h"
 
 const int NMS_UNION = 1;
 const int NMS_MIN = 2;
-
-const float kAlpha = 0.0078125;
-const float kMean = 127.5;
 const float kPNetThreshold = 0.6;
 const float kRNetThreshold = 0.7;
 const float kOnetThreshold = 0.9;
-const	int kChannel = 3;
-const	int kStride = 2;
-const	int kCellSize = 12;
-const int kMinSize = 40;
-const float kFactor = 0.709;
 
+using namespace tensorflow;
+
+// Init tensorflow session and create graph
 int TFMtcnn::Init(const std::string& model_file) {
-	std::vector<char> model_buf;
-	std::ifstream fs(model_file, std::ios::binary | std::ios::in);
-	if (!fs.good()) {
-		std::cerr << "Load model error:" << model_file << std::endl;
+  // Initialize tensorflow session
+  Status status = NewSession(SessionOptions(), &session_);
+  if (!status.ok()) {
+		LOG(FATAL) << "Init tensorflow session failed:" << status.ToString();
+    return -1;
+  } else {
+		LOG(INFO) << "Init tensorflow session successfully";
+  }
+
+  // Load graph
+  GraphDef graph_def;
+  status = ReadBinaryProto(Env::Default(), model_file, &graph_def);
+  if (!status.ok()) {
+		LOG(FATAL) << "Load model " << model_file << " failed:" << status.ToString();
 		return -1;
-	}
-	fs.seekg(0, std::ios::end);
-	int size = fs.tellg();
-	fs.seekg(0, std::ios::beg);
-	model_buf.resize(size);
-	fs.read(model_buf.data(), size);
-	fs.close();
+	} else {
+		LOG(INFO) << "Load model " << model_file << " successfully";
+  }
 
-	TF_Status* s = TF_NewStatus();
-	TF_Buffer graph_def = {model_buf.data(), model_buf.size(), nullptr};
-	graph_ = TF_NewGraph();
-	TF_ImportGraphDefOptions* import_opts = TF_NewImportGraphDefOptions();
-	TF_ImportGraphDefOptionsSetPrefix(import_opts, "");
-	TF_GraphImportGraphDef(graph_, &graph_def, import_opts, s);
-	if (TF_GetCode(s) != TF_OK) {
-    std::cerr << "Load graph_ error:" << TF_Message(s) << std::endl;
+  // Add graph to the session
+  status = session_->Create(graph_def);
+  if (!status.ok()) {
+		LOG(FATAL) << "Create graph in the session failed:" << status.ToString();
 		return -1;
-	}
-
-	TF_SessionOptions* session_opts = TF_NewSessionOptions();
-	session_ = TF_NewSession(graph_, session_opts, s);
-
-	TF_DeleteStatus(s);
+	} else {
+		LOG(INFO) << "Create graph in the session successfully";
+  }
   return 0;
 }
 
-void TFMtcnn::GenerateBoundingBox(const float* confidence_data,
-                                  const float* reg_data, float scale,
-                                  float threshold, int h, int w, bool transposed,
-                                  std::vector<FaceBox>* output) {
-  float score = 0.0f;
-  float top_x = 0.0f;
-  float top_y = 0.0f;
-  float bottom_x = 0.0f;
-  float bottom_y = 0.0f;
-  int score_offset = 0;
-  int reg_offset = 0;
-
-	for (int y = 0; y < h; y++) {
-		for (int x = 0; x < w; x++) {
-      score_offset = 2 * w * y + 2 * x + 1;
-			score = confidence_data[score_offset];
-			if (score >= threshold) {
-				top_x = (int)((x * kStride + 1) / scale);
-				top_y = (int)((y * kStride + 1) / scale);
-				bottom_x = (int)((x * kStride + kCellSize) / scale);
-				bottom_y = (int)((y * kStride + kCellSize) / scale);
-
-				FaceBox box;
-				box.x0 = top_x;
-				box.y0 = top_y;
-				box.x1 = bottom_x;
-				box.y1 = bottom_y;
-				box.score = score;
-
-				reg_offset = (w * 4) * y + 4 * x;
-				if (transposed) {
-					box.regress[1] = reg_data[reg_offset];
-					box.regress[0] = reg_data[reg_offset + 1]; 
-					box.regress[3] = reg_data[reg_offset + 2];
-					box.regress[2] = reg_data[reg_offset + 3];
-				} else {
-					box.regress[0] = reg_data[reg_offset];
-					box.regress[1] = reg_data[reg_offset + 1]; 
-					box.regress[2] = reg_data[reg_offset + 2];
-					box.regress[3] = reg_data[reg_offset + 3];
-				}
-				output->emplace_back(box);
-			}
-		}
-  }
-}
-
-static void dummy_deallocator(void* data, size_t len, void* arg) {}
-
-void TFMtcnn::PNet(cv::Mat& img, const ScaleWindow& win,
+int TFMtcnn::PNet(cv::Mat& img, const ScaleWindow& win,
                    std::vector<FaceBox>* boxes) {
-	cv::Mat resized;
-	int scale_h = win.h;
-	int scale_w = win.w;
+	cv::Mat resized_img;
+	int height = win.h;
+	int width = win.w;
 	float scale = win.scale;
 
-	cv::resize(img, resized, cv::Size(scale_w, scale_h), 0, 0);
+	cv::resize(img, resized_img, cv::Size(width, height), 0, 0);
 
-	std::vector<TF_Output> input_names;
-	std::vector<TF_Tensor*> input_values;
+  Tensor input_tensor(DT_FLOAT, TensorShape({1, height, width, 3}));
+  float* input_data_ptr = input_tensor.flat<float>().data();
+  // cv::Mat fake_mat(height, width, CV_32FC(src.channels()), tensor_data_ptr);
+  cv::Mat fake_mat(height, width, CV_32FC3, input_data_ptr);
+  resized_img.convertTo(fake_mat, CV_32FC3);
 
-	TF_Operation* input_name = TF_GraphOperationByName(graph_, "pnet/input");
+  std::vector<std::pair<std::string, Tensor>> inputs;
+  inputs.emplace_back(std::make_pair<std::string, Tensor>("pnet/input:0",
+        std::move(input_tensor)));
 
-	input_names.push_back({input_name, 0});
+  std::vector<std::string> output_names = {
+    "pnet/conv4-2/BiasAdd:0",
+    "pnet/prob1:0"
+  };
+  std::vector<Tensor> outputs;
+  Status status = session_->Run(inputs, output_names, {}, &outputs);
 
-	const int64_t dim[4] = {1, scale_h, scale_w, 3};
+  if (!status.ok()) {
+		LOG(WARNING) <<"PNet failed:" << status.ToString();
+		return -1;
+	}
 
-	TF_Tensor* input_tensor = TF_NewTensor(TF_FLOAT, dim, 4, resized.ptr(),
-                                         sizeof(float) * scale_w * scale_h * 3,
-                                         dummy_deallocator, nullptr);
+  const Tensor& regress_tensor  = outputs[0];
+  const Tensor& confidence_tensor  = outputs[1];
 
-	input_values.push_back(input_tensor);
+  const TensorShape& regress_shape  = regress_tensor.shape();
+	const TensorShape& confidence_shape = confidence_tensor.shape();
 
-	std::vector<TF_Output> output_names;
+	int h = regress_shape.dim_size(1);
+	int w = confidence_shape.dim_size(2);
 
-	TF_Operation* output_name = TF_GraphOperationByName(graph_, "pnet/conv4-2/BiasAdd");
-	output_names.push_back({output_name, 0});
+  const tensorflow::StringPiece& regress_piece = regress_tensor.tensor_data();
+  const tensorflow::StringPiece& confidence_piece = confidence_tensor.tensor_data();
 
-	output_name = TF_GraphOperationByName(graph_, "pnet/prob1");
-	output_names.push_back({output_name, 0});
+  const float* regress_data = (const float*)regress_piece.data();
+  const float* confidence_data = (const float*)confidence_piece.data();
 
-	std::vector<TF_Tensor*> output_values(output_names.size(), nullptr);
-
-	TF_Status* s= TF_NewStatus();
-	TF_SessionRun(session_, nullptr, input_names.data(), input_values.data(),
-                input_names.size(), output_names.data(), output_values.data(),
-                output_names.size(), nullptr, 0, nullptr, s);
-
-	const float* conf_data=(const float*)TF_TensorData(output_values[1]);
-	const float* reg_data=(const float*)TF_TensorData(output_values[0]);
-
-	int feature_h = TF_Dim(output_values[0], 1);
-	int feature_w = TF_Dim(output_values[0], 2);
-	// int conf_size = feature_h * feature_w * 2;
+  // int confidence_size = h * w * 2;
 
 	std::vector<FaceBox> candidate_boxes;
-	GenerateBoundingBox(conf_data, reg_data, scale, kPNetThreshold,
-                      feature_h, feature_w, true, &candidate_boxes);
-	Normalize(candidate_boxes, 0.5, NMS_UNION, boxes);
+	GenerateBoundingBox(confidence_data, regress_data, scale, kPNetThreshold,
+                      h, w, true, &candidate_boxes);
 
-	TF_DeleteStatus(s);
-	TF_DeleteTensor(output_values[0]);
-	TF_DeleteTensor(output_values[1]);
-	TF_DeleteTensor(input_tensor);
+	Normalize(candidate_boxes, 0.5, NMS_UNION, boxes);
+  return 0;
 }
 
-void TFMtcnn::RNet(cv::Mat& img, std::vector<FaceBox>& pnet_boxes,
-                   std::vector<FaceBox>* output_boxes) {
+int TFMtcnn::RNet(cv::Mat& img, std::vector<FaceBox>& pnet_boxes,
+                  std::vector<FaceBox>* output_boxes) {
 	int batch = pnet_boxes.size();
 	int height = 24;
 	int width = 24;
 
-	int input_size = batch * height * width * kChannel;
+	int input_size = batch * height * width * 3;
 	std::vector<float> input_buffer(input_size);
 	float* input_data = input_buffer.data();
 
-  int patch_size = width * height * kChannel;
+  int patch_size = width * height * 3;
 	for (int i = 0; i < batch; i++) {
-		CopyPatch(img, pnet_boxes[i], input_data, height, width);
+		Patch(img, pnet_boxes[i], input_data, height, width);
 		input_data += patch_size;
 	}
 
-	std::vector<TF_Output> input_names;
+  Tensor input_tensor(DT_FLOAT, TensorShape({batch, height, width, 3}));
+  float* input_data_ptr = input_tensor.flat<float>().data();
+  std::copy_n(input_buffer.begin(), input_size, input_data_ptr);
 
-	TF_Operation* input_name = TF_GraphOperationByName(graph_, "rnet/input");
-	input_names.push_back({input_name, 0});
+  std::vector<std::pair<std::string, Tensor>> inputs;
+  inputs.emplace_back(std::make_pair<std::string, Tensor>("rnet/input:0",
+        std::move(input_tensor)));
 
-	std::vector<TF_Tensor*> input_values;
-	const int64_t dim[4] = {batch, height, width, kChannel};
-	TF_Tensor* input_tensor = TF_NewTensor(TF_FLOAT, dim, 4, input_buffer.data(),
-                                         sizeof(float) * input_size,
-                                         dummy_deallocator, nullptr);
-	input_values.push_back(input_tensor);
+  std::vector<std::string> output_names = {
+    "rnet/conv5-2/conv5-2:0",
+    "rnet/prob1:0"
+  };
 
-	std::vector<TF_Output> output_names;
-	TF_Operation* output_name = TF_GraphOperationByName(graph_,"rnet/conv5-2/conv5-2");
-	output_names.push_back({output_name, 0});
-	output_name = TF_GraphOperationByName(graph_,"rnet/prob1");
-	output_names.push_back({output_name,0});
+  std::vector<Tensor> outputs;
+  Status status = session_->Run(inputs, output_names, {}, &outputs);
 
-	std::vector<TF_Tensor*> output_values(output_names.size(), nullptr);
-	TF_Status* s = TF_NewStatus();
-	TF_SessionRun(session_, nullptr, input_names.data(), input_values.data(),
-                input_names.size(), output_names.data(), output_values.data(),
-                output_names.size(), nullptr, 0, nullptr, s);
-
-	const float* conf_data=(const float *)TF_TensorData(output_values[1]);
-	const float* reg_data=(const float *)TF_TensorData(output_values[0]);
-
-	for (int i = 0; i < batch; i++) {
-		if (conf_data[1] > kRNetThreshold) {
-			FaceBox output_box;
-			FaceBox& input_box=pnet_boxes[i];
-			output_box.x0=input_box.x0;
-			output_box.y0=input_box.y0;
-			output_box.x1=input_box.x1;
-			output_box.y1=input_box.y1;
-			output_box.score = *(conf_data+1);
-			output_box.regress[0]=reg_data[1];
-			output_box.regress[1]=reg_data[0];
-			output_box.regress[2]=reg_data[3];
-			output_box.regress[3]=reg_data[2];
-			output_boxes->emplace_back(output_box);
-		}
-		conf_data += 2;
-		reg_data += 4;
+  if (!status.ok()) {
+		LOG(WARNING) <<"RNet failed:" << status.ToString();
+		return -1;
 	}
 
-	TF_DeleteStatus(s);
-	TF_DeleteTensor(output_values[0]);
-	TF_DeleteTensor(output_values[1]);
-	TF_DeleteTensor(input_tensor);
+  const Tensor& regress_tensor  = outputs[0];
+  const Tensor& confidence_tensor  = outputs[1];
+  const tensorflow::StringPiece& regress_piece = regress_tensor.tensor_data();
+  const tensorflow::StringPiece& confidence_piece = confidence_tensor.tensor_data();
+  const float* regress_data = (const float*)regress_piece.data();
+  const float* confidence_data = (const float*)confidence_piece.data();
+
+	for (int i = 0; i < batch; i++) {
+		if (confidence_data[1] > kRNetThreshold) {
+			FaceBox box;
+			FaceBox& input_box = pnet_boxes[i];
+			box.x0 = input_box.x0;
+			box.y0 = input_box.y0;
+			box.x1 = input_box.x1;
+			box.y1 = input_box.y1;
+			box.score = *(confidence_data + 1);
+			box.regress[0] = regress_data[1];
+			box.regress[1] = regress_data[0];
+			box.regress[2] = regress_data[3];
+			box.regress[3] = regress_data[2];
+			output_boxes->emplace_back(box);
+		}
+		confidence_data += 2;
+		regress_data += 4;
+	}
+  return 0;
 }
 
-void TFMtcnn::ONet(cv::Mat& img, std::vector<FaceBox>& rnet_boxes,
+int TFMtcnn::ONet(cv::Mat& img, std::vector<FaceBox>& rnet_boxes,
                    std::vector<FaceBox>* output_boxes) {
 	int batch = rnet_boxes.size();
 	int height = 48;
 	int width = 48;
-	int input_size = batch * height * width * kChannel;
+	int input_size = batch * height * width * 3;
 
 	std::vector<float> input_buffer(input_size);
 	float* input_data = input_buffer.data();
 
 	for (int i = 0; i < batch; i++) {
-		int patch_size = width * height * kChannel;
-		CopyPatch(img, rnet_boxes[i], input_data, height, width);
+		int patch_size = width * height * 3;
+		Patch(img, rnet_boxes[i], input_data, height, width);
 		input_data += patch_size;
 	}
 
-	std::vector<TF_Output> input_names;
-	std::vector<TF_Tensor*> input_values;
+  Tensor input_tensor(DT_FLOAT, TensorShape({batch, height, width, 3}));
+  float* input_data_ptr = input_tensor.flat<float>().data();
+  std::copy_n(input_buffer.begin(), input_size, input_data_ptr);
 
-	TF_Operation* input_name = TF_GraphOperationByName(graph_, "onet/input");
-	input_names.push_back({input_name, 0});
+  std::vector<std::pair<std::string, Tensor>> inputs;
+  inputs.emplace_back(std::make_pair<std::string, Tensor>("onet/input:0",
+        std::move(input_tensor)));
 
-	const int64_t dim[4] = { batch, height, width, kChannel };
-	TF_Tensor* input_tensor = TF_NewTensor(TF_FLOAT, dim, 4, input_buffer.data(),
-                                         sizeof(float) * input_size,
-                                         dummy_deallocator, nullptr);
-	input_values.push_back(input_tensor);
+  std::vector<std::string> output_names = {
+    "onet/conv6-2/conv6-2:0",
+    "onet/conv6-3/conv6-3:0",
+    "onet/prob1:0"
+  };
 
-	std::vector<TF_Output> output_names;
-	TF_Operation* output_name = TF_GraphOperationByName(graph_,"onet/conv6-2/conv6-2");
-	output_names.push_back({output_name,0});
-	output_name = TF_GraphOperationByName(graph_,"onet/conv6-3/conv6-3");
-	output_names.push_back({output_name,0});
-	output_name = TF_GraphOperationByName(graph_,"onet/prob1");
-	output_names.push_back({output_name,0});
+  std::vector<Tensor> outputs;
+  Status status = session_->Run(inputs, output_names, {}, &outputs);
 
-	std::vector<TF_Tensor*> output_values(output_names.size(), nullptr);
-	TF_Status* s = TF_NewStatus();
-	TF_SessionRun(session_, nullptr, input_names.data(), input_values.data(),
-                input_names.size(), output_names.data(), output_values.data(),
-                output_names.size(), nullptr, 0, nullptr, s);
-
-	const float* conf_data = (const float*)TF_TensorData(output_values[2]);
-	const float* reg_data = (const float*)TF_TensorData(output_values[0]);
-	const float* points_data = (const float*)TF_TensorData(output_values[1]);
-
-	for (int i = 0; i < batch; i++) {
-		if (conf_data[1] > kOnetThreshold) {
-			FaceBox output_box;
-			FaceBox& input_box=rnet_boxes[i];
-			output_box.x0=input_box.x0;
-			output_box.y0=input_box.y0;
-			output_box.x1=input_box.x1;
-			output_box.y1=input_box.y1;
-			output_box.score = conf_data[1];
-			output_box.regress[0]=reg_data[1];
-			output_box.regress[1]=reg_data[0];
-			output_box.regress[2]=reg_data[3];
-			output_box.regress[3]=reg_data[2];
-			for (int j = 0; j < 5; j++) {
-				output_box.landmark.x[j] = *(points_data + j + 5);
-				output_box.landmark.y[j] = *(points_data + j);
-			}
-			output_boxes->emplace_back(output_box);
-		}
-		conf_data += 2;
-		reg_data += 4;
-		points_data += 10;
+  if (!status.ok()) {
+		LOG(WARNING) <<"RNet failed:" << status.ToString();
+		return -1;
 	}
 
-	TF_DeleteStatus(s);
-	TF_DeleteTensor(output_values[0]);
-	TF_DeleteTensor(output_values[1]);
-	TF_DeleteTensor(output_values[2]);
-	TF_DeleteTensor(input_tensor);
+  const Tensor& regress_tensor  = outputs[0];
+  const Tensor& points_tensor  = outputs[1];
+  const Tensor& confidence_tensor  = outputs[2];
+  const tensorflow::StringPiece& regress_piece = regress_tensor.tensor_data();
+  const tensorflow::StringPiece& points_piece = points_tensor.tensor_data();
+  const tensorflow::StringPiece& confidence_piece = confidence_tensor.tensor_data();
+  const float* regress_data = (const float*)regress_piece.data();
+  const float* points_data = (const float*)points_piece.data();
+  const float* confidence_data = (const float*)confidence_piece.data();
+
+	for (int i = 0; i < batch; i++) {
+		if (confidence_data[1] > kOnetThreshold) {
+			FaceBox box;
+			FaceBox& input_box = rnet_boxes[i];
+			box.x0 = input_box.x0;
+			box.y0 = input_box.y0;
+			box.x1 = input_box.x1;
+			box.y1 = input_box.y1;
+			box.score = confidence_data[1];
+			box.regress[0] = regress_data[1];
+			box.regress[1] = regress_data[0];
+			box.regress[2] = regress_data[3];
+			box.regress[3] = regress_data[2];
+			for (int j = 0; j < 5; j++) {
+				box.landmark.x[j] = *(points_data + j + 5);
+				box.landmark.y[j] = *(points_data + j);
+			}
+			output_boxes->emplace_back(box);
+		}
+		confidence_data += 2;
+		regress_data += 4;
+		points_data += 10;
+	}
+  return 0;
 }
 
 void TFMtcnn::Detect(cv::Mat& src, std::vector<FaceBox>* face_boxes) {
+  const float kAlpha = 0.0078125;
+  const float kMean = 127.5;
+  const int kMinSize = 40;
+  const float kFactor = 0.709;
+
 	cv::Mat img;
 	src.convertTo(img, CV_32FC3);
 	img = (img - kMean) * kAlpha;
@@ -315,20 +264,27 @@ void TFMtcnn::Detect(cv::Mat& src, std::vector<FaceBox>* face_boxes) {
 	std::vector<FaceBox> pnet_boxes_final;
   for (const ScaleWindow& scale_window : scale_windows) {
 		std::vector<FaceBox> boxes;
-		PNet(img, scale_window, &boxes);
+		if (PNet(img, scale_window, &boxes) != 0) {
+      continue;
+    }
 		pnet_boxes.insert(pnet_boxes.end(), boxes.begin(), boxes.end());
 	}
 	ProcessBoxes(pnet_boxes, img_h, img_w, &pnet_boxes_final);
 
 	std::vector<FaceBox> rnet_boxes;
 	std::vector<FaceBox> rnet_boxes_final;
-	RNet(img, pnet_boxes_final, &rnet_boxes);
+	if (RNet(img, pnet_boxes_final, &rnet_boxes) != 0) {
+    return;
+  }
 	ProcessBoxes(rnet_boxes, img_h, img_w, &rnet_boxes_final);
 
   float h = 0.0f;
   float w = 0.0f;
 	std::vector<FaceBox> onet_boxes;
-	ONet(img, rnet_boxes_final, &onet_boxes);
+	if (ONet(img, rnet_boxes_final, &onet_boxes) != 0) {
+    return;
+  }
+
   for (FaceBox& box : onet_boxes) {
 		h = box.x1 - box.x0 + 1;
 		w = box.y1 - box.y0 + 1;
@@ -471,7 +427,7 @@ void TFMtcnn::Padding(int img_h, int img_w, std::vector<FaceBox>* boxes) {
 	}
 } 
 
-void TFMtcnn::CopyPatch(const cv::Mat& img, FaceBox& box, float* data_to,
+void TFMtcnn::Patch(const cv::Mat& img, FaceBox& box, float* data_to,
                         int height, int width) {
 	cv::Mat resized(height, width, CV_32FC3, data_to);
 	cv::Mat chop_img = img(cv::Range(box.py0, box.py1), cv::Range(box.px0, box.px1));
@@ -482,4 +438,56 @@ void TFMtcnn::CopyPatch(const cv::Mat& img, FaceBox& box, float* data_to,
 	cv::copyMakeBorder(chop_img, chop_img, pad_top, pad_bottom, pad_left,
                      pad_right, cv::BORDER_CONSTANT, cv::Scalar(0));
 	cv::resize(chop_img, resized, cv::Size(width, height), 0, 0);
+}
+
+void TFMtcnn::GenerateBoundingBox(const float* confidence_data,
+                                  const float* regress_data, float scale,
+                                  float threshold, int h, int w,
+                                  bool transposed,
+                                  std::vector<FaceBox>* output) {
+
+  const	int kStride = 2;
+  const	int kCellSize = 12;
+
+  float score = 0.0f;
+  float top_x = 0.0f;
+  float top_y = 0.0f;
+  float bottom_x = 0.0f;
+  float bottom_y = 0.0f;
+  int score_offset = 0;
+  int regress_offset = 0;
+
+	for (int y = 0; y < h; y++) {
+    for (int x = 0; x < w; x++) {
+      score_offset = 2 * w * y + 2 * x + 1;
+			score = confidence_data[score_offset];
+			if (score >= threshold) {
+				top_x = (int)((x * kStride + 1) / scale);
+				top_y = (int)((y * kStride + 1) / scale);
+				bottom_x = (int)((x * kStride + kCellSize) / scale);
+				bottom_y = (int)((y * kStride + kCellSize) / scale);
+
+				FaceBox box;
+				box.x0 = top_x;
+				box.y0 = top_y;
+				box.x1 = bottom_x;
+				box.y1 = bottom_y;
+				box.score = score;
+
+				regress_offset = (w * 4) * y + 4 * x;
+				if (transposed) {
+					box.regress[1] = regress_data[regress_offset];
+					box.regress[0] = regress_data[regress_offset + 1]; 
+					box.regress[3] = regress_data[regress_offset + 2];
+					box.regress[2] = regress_data[regress_offset + 3];
+				} else {
+					box.regress[0] = regress_data[regress_offset];
+					box.regress[1] = regress_data[regress_offset + 1]; 
+					box.regress[2] = regress_data[regress_offset + 2];
+					box.regress[3] = regress_data[regress_offset + 3];
+				}
+				output->emplace_back(box);
+			}
+		}
+  }
 }

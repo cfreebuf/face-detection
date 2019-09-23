@@ -11,11 +11,11 @@
 
 #include "third_party/rapidjson/stringbuffer.h"
 #include "tf_mtcnn.h"
+#include "tf_embedding.h"
 #include "capture.h"
 #include "util/util.h"
 #include "util/base64.h"
 #include "face_index.h"
-#include "facenet_client.h"
 
 enum DetectType {
   DETECT_LOOP = 0,
@@ -39,8 +39,9 @@ class FaceDetection {
   bool SendImage(const std::string& image_data);
 
   bool DetectLoop();
-  bool DetectImage(const std::string& image_path);
+  bool DetectImages();
   bool TakePhoto();
+  bool DetectImage(const std::string& image_path);
 
   int GetWarpAffineImage(cv::Mat& src,
                          const std::vector<cv::Point2f>& landmarks,
@@ -67,9 +68,8 @@ class FaceDetection {
   DetectType type_;
   std::shared_ptr<Capture> capture_;
   TFMtcnn tf_mtcnn_;
+  TFEmbedding tf_embedding_;
   FaceIndex face_index_;
-
-  std::unique_ptr<FaceNetClient> facenet_client_;
 };
 
 #endif
