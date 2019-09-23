@@ -24,7 +24,7 @@
 
 FaceDetection::FaceDetection(int type) : type_(DetectType(type)) {
   LOG(INFO) << "Start init mtcnn";
-  if (tf_mtcnn_.Init(FLAGS_mtcnn_model_file) != 0) {
+  if (mtcnn_tensorflow_.Init(FLAGS_mtcnn_model_file) != 0) {
     LOG(WARNING) << "Failed to load graph for mtcnn, model:"
                  << FLAGS_mtcnn_model_file;
     exit(-1);
@@ -32,7 +32,7 @@ FaceDetection::FaceDetection(int type) : type_(DetectType(type)) {
   LOG(INFO) << "Finish init mtcnn";
 
   LOG(INFO) << "Start loading facenet model";
-  if (tf_embedding_.Init(FLAGS_facenet_model_file) != 0) {
+  if (facenet_tensorflow_.Init(FLAGS_facenet_model_file) != 0) {
     LOG(WARNING) << "Failed to load graph for facenet, model:"
                  << FLAGS_facenet_model_file;
     exit(-1);
@@ -175,7 +175,7 @@ bool FaceDetection::DetectLoop() {
 		capture->read(frame);
 
     face_boxes.clear();
-    tf_mtcnn_.Detect(frame, &face_boxes);
+    mtcnn_tensorflow_.Detect(frame, &face_boxes);
     LOG(INFO) << "faces size:" << face_boxes.size();
 
     faces.clear();
@@ -191,7 +191,7 @@ bool FaceDetection::DetectLoop() {
 		}
 
     face_dims.clear();
-    tf_embedding_.GenerateEmbedding(faces, &face_dims);
+    facenet_tensorflow_.GenerateEmbedding(faces, &face_dims);
 
     face_infos.clear();
 
@@ -275,7 +275,7 @@ bool FaceDetection::DetectImage(const std::string& image_file) {
   int min_face_id = -1;
   double min_face_dist = 100.0f;
 
-  tf_mtcnn_.Detect(frame, &face_info);
+  mtcnn_tensorflow_.Detect(frame, &face_info);
 
   for (unsigned int i = 0; i < face_info.size(); i++) {
     FaceBox& box = face_info[i];
@@ -301,7 +301,7 @@ bool FaceDetection::DetectImage(const std::string& image_file) {
 #endif
   }
 
-  tf_embedding_.GenerateEmbedding(faces, &face_dims);
+  facenet_tensorflow_.GenerateEmbedding(faces, &face_dims);
 
   for (const std::vector<double>& dims : face_dims) {
     face_ids.clear();
@@ -380,7 +380,7 @@ bool FaceDetection::TakePhoto() {
 
     face_boxes.clear();
 
-    tf_mtcnn_.Detect(frame, &face_boxes);
+    mtcnn_tensorflow_.Detect(frame, &face_boxes);
     if (face_boxes.empty()) {
       LOG(WARNING) << "No faced detected";
       continue;
@@ -413,7 +413,7 @@ bool FaceDetection::TakePhoto() {
         faces.emplace_back(std::move(face_img));
 
         face_dims.clear();
-        ret = tf_embedding_.GenerateEmbedding(faces, &face_dims);
+        ret = facenet_tensorflow_.GenerateEmbedding(faces, &face_dims);
         if (ret == 0 && face_dims.size() == 1) {
           std::vector<double>& dims = face_dims[0];
           for (double v : dims) {

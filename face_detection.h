@@ -10,8 +10,8 @@
 #include <memory>
 
 #include "third_party/rapidjson/stringbuffer.h"
-#include "tf_mtcnn.h"
-#include "tf_embedding.h"
+#include "mtcnn_tensorflow.h"
+#include "facenet_tensorflow.h"
 #include "capture.h"
 #include "util/util.h"
 #include "util/base64.h"
@@ -67,8 +67,8 @@ class FaceDetection {
  private:
   DetectType type_;
   std::shared_ptr<Capture> capture_;
-  TFMtcnn tf_mtcnn_;
-  TFEmbedding tf_embedding_;
+  MtcnnTensorflow mtcnn_tensorflow_;
+  FaceNetTensorflow facenet_tensorflow_;
   FaceIndex face_index_;
 };
 

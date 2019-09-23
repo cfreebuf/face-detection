@@ -6,6 +6,8 @@ Facenet implemented by Tensorflow
 Annoy
 LMDB
 
+![项目示例](https://github.com/cfreebuf/face-detection/tree/master/docs/demo.jpg)
+
 Tested On MacOS
 
 Requirements:
