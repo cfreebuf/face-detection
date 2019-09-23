@@ -1,18 +1,21 @@
 # face-detection
-Face detection implemented by mtcnn+tensorflow+facenet+opencv
-c++ and python
+Face detection
 
-Test On MacOS
+MTCNN implemented by Tensorflow
+Facenet implemented by Tensorflow
+Annoy
+LMDB
+
+Tested On MacOS
+
+Requirements:
+  1. Build tensorflow on your own machine
+  2. put tensorflow libs and include into tf directory
+  3. Install glog、gflags
+
 
 Compile:
   make
 
 Run:
- First:
-   cd faceserver && python facenet_server.py
- Second:
-   ./bin/faced
-
-Requirements:
-  1. Build tensorflow
-  2. Install other requirements TODO
+  ./bin/faced
