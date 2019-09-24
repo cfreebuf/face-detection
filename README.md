@@ -57,7 +57,7 @@ make -j
 ###  特征存储
 提取的Embedding向量存储于lmdb中，用c++封装了lmdb接口,见代码lmdb_wrapper.h, face_db.h
 
-###人脸匹配
+### 人脸匹配
 基于Annoy库索引Embedding向量并提供高维近似k近邻查找，以加速匹配速度，见代码face_index.h
 
 ### 人脸信息展示
