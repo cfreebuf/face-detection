@@ -32,6 +32,7 @@ FaceIndex::FaceIndex() : buf_index_(1) {
   std::thread(&FaceIndex::LoadFaceInfos, this).detach();
 }
 
+// Load face dims from lmdb and init annoy index
 void FaceIndex::BuildIndexFromFaceDB() {
   uint64_t face_id;
   std::vector<double> dims;
@@ -46,7 +47,8 @@ void FaceIndex::BuildIndexFromFaceDB() {
       // PrintDims(dims);
       if (dims.size() == kDims) {
         face_annoy_index_->add_item(face_id, dims.data());
-        LOG(INFO) << "Add dim in to annoy index face_id:" << face_id;
+        LOG(INFO) << "Add dim into annoy, face_id:" << face_id;
+        face_ids_.insert(face_id);
       } else {
         LOG(WARNING) << "Invalid dims size:" << dims.size() << " for face_id:" << face_id;
       }

@@ -20,7 +20,7 @@
 enum DetectType {
   DETECT_LOOP = 0,
   DETECT_BY_IMAGE,
-  DETECT_TAKE_PHOTO
+  DETECT_FACE_RECORD
 };
 
 class FaceDetection {
@@ -29,7 +29,6 @@ class FaceDetection {
   ~FaceDetection();
 
   int Init();
-  int InitCapture();
 
   bool Start();
   void Stop();
@@ -40,7 +39,7 @@ class FaceDetection {
 
   bool DetectLoop();
   bool DetectImages();
-  bool TakePhoto();
+  bool FaceRecord();
   bool DetectImage(const std::string& image_path);
 
   int GetWarpAffineImage(cv::Mat& src,

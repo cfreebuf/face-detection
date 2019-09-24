@@ -14,3 +14,9 @@ void PrintDims(const std::vector<double>& dims) {
   }
   std::cout << std::endl;
 }
+
+void LowerString(std::string& str) {
+  for (char& c : str) {
+    std::tolower(c);
+  }
+}

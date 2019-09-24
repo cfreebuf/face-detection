@@ -15,7 +15,6 @@ class Capture {
     capture_.open(dev);
     if (!capture_.isOpened()) {
       std::cerr << "failed to open camera " << dev << std::endl;
-      exit(-1);
     } else {
       init_ = true;
     }
@@ -27,6 +26,14 @@ class Capture {
     } else {
       return NULL;
     }
+  }
+
+  bool is_inited() {
+    return init_;
+  }
+
+  void GetFrame(cv::Mat* frame) {
+    capture_.read(*frame);
   }
 
  private:

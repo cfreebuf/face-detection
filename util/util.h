@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <iostream>
+#include <string>
 
 std::vector<unsigned char> IntToBytes(int value);
 void PrintDims(const std::vector<double>& dims);
@@ -26,5 +27,7 @@ class alignas(8) Padded {
 // static_assert(!is_valid_pod<char>::value, "");
 // static_assert(is_valid_pod<double>::value, "");
 // static_assert(is_valid_pod<Padded<char>>::value, "");
+
+void LowerString(std::string& str);
 
 #endif

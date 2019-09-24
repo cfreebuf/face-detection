@@ -43,27 +43,13 @@ FaceDetection::FaceDetection(int type) : type_(DetectType(type)) {
 FaceDetection::~FaceDetection() {}
 
 int FaceDetection::Init() {
-  LOG(INFO) << "Start init face_detection";
-  if (type_ == DETECT_LOOP || type_ == DETECT_TAKE_PHOTO) {
-    LOG(INFO) << "Start init camera";
-    if (InitCapture() != 0) {
-      return -1;
-    }
-    LOG(INFO) << "Finish init camera";
-  }
-  LOG(INFO) << "Finish init face_detection";
-  return 0;
-}
-
-int FaceDetection::InitCapture() {
-  capture_ = std::make_shared<Capture>(FLAGS_camera_id);
-  if (capture_ == nullptr) {
-    LOG(WARNING) << "Failed to init camera camera_id:" << FLAGS_camera_id;
-    return -1;
+  if (type_ == DETECT_LOOP || type_ == DETECT_FACE_RECORD) {
+    capture_ = std::make_shared<Capture>(FLAGS_camera_id);
   }
   return 0;
 }
 
+// Draw landmarks and rectangle arround the face
 void FaceDetection::DrawRectAndLandmark(cv::Mat& frame, FaceBox& box) {
   cv::rectangle(frame, cv::Point(box.x0, box.y0), cv::Point(box.x1, box.y1),
                 cv::Scalar(0, 255, 0), 1);
@@ -72,12 +58,9 @@ void FaceDetection::DrawRectAndLandmark(cv::Mat& frame, FaceBox& box) {
 		cv::circle(frame, cv::Point(box.landmark.x[l], box.landmark.y[l]), 1,
                cv::Scalar(0, 0, 255), 2);
 	}
-
-  // cv::putText(frame, std::to_string(i),
-  //             cv::Point(box.x0, box.y0, cv::FONT_HERSHEY_COMPLEX, 0.5,
-  //             cv::Scalar(10, 10, 110));
 }
 
+// Draw person info in the left of the frame
 void FaceDetection::DrawFaceInfo(cv::Mat& frame, FaceInfo& face_info,
                                  FaceBox& box, int i) {
   const int font_height = 30;
@@ -131,12 +114,15 @@ void FaceDetection::DrawFaceInfo(cv::Mat& frame, FaceInfo& face_info,
 }
 
 bool FaceDetection::Start() {
-  if (type_ == DETECT_LOOP) {
+  // Load face dims from lmdb and init annoy index
+  face_index_.BuildIndexFromFaceDB();
+
+  if (type_ == DETECT_LOOP) {  // detect faces in every frame from a camera
     return DetectLoop();
-  } else if (type_ == DETECT_BY_IMAGE) {
+  } else if (type_ == DETECT_BY_IMAGE) {  // detect faces in an image
     return DetectImages();
-  } else if (type_ == DETECT_TAKE_PHOTO) {
-    return TakePhoto();
+  } else if (type_ == DETECT_FACE_RECORD) {  // make a record of one face 
+    return FaceRecord();
   } else {
     LOG(FATAL) << "Invalid detect type:" << type_;
   }
@@ -144,18 +130,15 @@ bool FaceDetection::Start() {
   return true;
 }
 
+// Detect faces from live video camera
 bool FaceDetection::DetectLoop() {
-  cv::VideoCapture* capture = capture_->capture();
-  if (capture == NULL) {
-    LOG(WARNING) << "Invalid capture";
+  if (!capture_->is_inited()) {
+    LOG(WARNING) << "Capture is not opened successfully";
     return false;
   }
 
-  face_index_.BuildIndexFromFaceDB();
-
   std::vector<FaceBox> face_boxes;
   std::vector<cv::Mat> faces;
-  // std::vector<double> dims;
   std::vector<std::vector<double>> face_dims;
   std::vector<FaceInfo> face_infos;
   std::vector<uint64_t> face_ids;
@@ -172,7 +155,7 @@ bool FaceDetection::DetectLoop() {
     t = (double)cv::getTickCount();
 
     cv::Mat frame;
-		capture->read(frame);
+		capture_->GetFrame(&frame);
 
     face_boxes.clear();
     mtcnn_tensorflow_.Detect(frame, &face_boxes);
@@ -202,7 +185,7 @@ bool FaceDetection::DetectLoop() {
       face_dist.clear();
 
       // Nearst
-      face_index_.GetNearest(3, dims, &face_ids, &face_dist);
+      face_index_.GetNearest(1, dims, &face_ids, &face_dist);
 
       auto min_it = std::min_element(face_dist.begin(), face_dist.end());
       min_face_dist = *min_it;
@@ -224,12 +207,7 @@ bool FaceDetection::DetectLoop() {
     for (int i = 0; i < face_infos.size(); i++) {
       FaceInfo& face_info = face_infos[i];
       FaceBox& box = face_boxes[i];
-      if (face_info.valid) {
-        DrawFaceInfo(frame, face_info, box, i);
-      } else {
-        cv::putText(frame, "NO RECORD", cv::Point(box.x0, box.y0 - 5),
-            cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0));
-      }
+      DrawFaceInfo(frame, face_info, box, i);
     }
 
     // Draw FPS
@@ -240,16 +218,15 @@ bool FaceDetection::DetectLoop() {
         cv::Scalar(0, 255, 0));
 
     cv::imshow("FaceDetection", frame);
-    cv::waitKey(1);
+    cv::waitKey(5);
   }
   return true;
 }
 
 void FaceDetection::Stop() {}
 
+// Detect faces from local image files
 bool FaceDetection::DetectImages() {
-  face_index_.BuildIndexFromFaceDB();
-
   std::vector<std::string> images = FileUtils::ListDir(FLAGS_test_images_path);
   for (const std::string& image_file : images) {
     DetectImage(image_file);
@@ -351,20 +328,40 @@ void FaceDetection::WrapJson(const std::string& raw, std::string* data) {
   *data = std::move(buffer.GetString());
 }
 
-bool FaceDetection::TakePhoto() {
+bool FaceDetection::FaceRecord() {
   std::string face_id_str;
-  std::cout << "Enter id" << std::endl;
-  std::cin >> face_id_str;
-  if (face_id_str.empty()) {
-    LOG(WARNING) << "Invalid face id";
-    return false;
-  }
-  std::string face_img_file = face_id_str + ".jpg";
-  uint64_t face_id = std::stoull(face_id_str);
+  uint64_t face_id = -1;
+  while (1) {
+    std::cout << "Enter face id..." << std::endl;
+    std::cin >> face_id_str;
+    if (face_id_str.empty()) {
+      LOG(WARNING) << "Invalid face id, try again";
+      continue;
+    }
 
-  cv::VideoCapture* capture = capture_->capture();
-  if (capture == NULL) {
-    LOG(WARNING) << "Invalid capture";
+    face_id = std::stoull(face_id_str);
+    if (face_index_.is_existed(face_id)) {
+      std::cout << "Face ID alread existed, overide?(y/n)" << std::endl;
+      std::string overide;
+      std::cin >> overide;
+      LowerString(overide);
+      if (overide == "y") {
+        break;
+      } else if (overide == "n") {
+        continue;
+      } else {
+        std::cerr << "You should enter y or n" << std::endl;
+        continue;
+      }
+    } else {
+      break;
+    }
+  }
+
+  std::string face_img_file = face_id_str + ".jpg";
+
+  if (!capture_->is_inited()) {
+    LOG(WARNING) << "Capture is not opened successfully";
     return false;
   }
 
@@ -375,7 +372,7 @@ bool FaceDetection::TakePhoto() {
 
   while (1) {
     cv::Mat frame;
-    capture->read(frame);
+    capture_->GetFrame(&frame);
     cv::Mat frame_tmp = frame;
 
     face_boxes.clear();
@@ -428,12 +425,12 @@ bool FaceDetection::TakePhoto() {
         }
       }
       if (key == 'q') {
-        LOG(INFO) << "Exit take photo";
+        LOG(INFO) << "Exit face record";
         return true;
       }
     }
 
-    cv::imshow("TakePhoto", frame);
+    cv::imshow("FaceRecord", frame);
     cv::waitKey(1);
   }
   return true;

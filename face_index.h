@@ -10,6 +10,7 @@
 #include <string>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include "third_party/annoy/annoylib.h"
 #include "third_party/annoy/kissrandom.h"
 
@@ -60,10 +61,15 @@ class FaceIndex {
     return 0;
   }
 
+  bool is_existed(uint64_t face_id) {
+    return face_ids_.find(face_id) != face_ids_.end();
+  }
+
  private:
   std::unique_ptr<FaceAnnoyIndex> face_annoy_index_;
   std::vector<std::shared_ptr<FaceInfoMap>> face_infos_buf_;
   int buf_index_;
+  std::unordered_set<uint64_t> face_ids_;
 };
 
 #endif
